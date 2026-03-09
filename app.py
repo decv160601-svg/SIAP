@@ -14,6 +14,7 @@ from selenium.webdriver.support.ui import Select, WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, ElementClickInterceptedException
 from webdriver_manager.chrome import ChromeDriverManager
+from webdriver_manager.core.os_manager import ChromeType
 
 # ==========================================
 # 1. LÓGICA DEL SCRAPER (Tu Clase Validada)
@@ -29,6 +30,14 @@ class ScraperSIAP:
             os.makedirs(self.download_dir)
             
         options = webdriver.ChromeOptions()
+        
+        # --- CORRECCIÓN PARA LINUX/CHROMIUM ---
+        # Intentamos forzar el uso de Chromium si estamos en Linux
+        if os.path.exists("/usr/bin/chromium"):
+            options.binary_location = "/usr/bin/chromium"
+        elif os.path.exists("/usr/bin/chromium-browser"):
+            options.binary_location = "/usr/bin/chromium-browser"
+            
         prefs = {
             "download.default_directory": self.download_dir,
             "download.prompt_for_download": False,
@@ -39,12 +48,24 @@ class ScraperSIAP:
         options.add_experimental_option("prefs", prefs)
         options.page_load_strategy = 'normal'
         
+        # Argumentos necesarios para entornos de servidor (Docker/Streamlit Cloud)
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--disable-gpu")
+        
         if headless:
             options.add_argument("--headless")
         
-        self.driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=options)
+        # --- INSTALACIÓN DEL DRIVER ESPECÍFICO PARA CHROMIUM ---
+        try:
+            # Intentamos instalar el driver especificando que es CHROMIUM
+            service = Service(ChromeDriverManager(chrome_type=ChromeType.CHROMIUM).install())
+        except:
+            # Fallback: Intentamos instalación estándar si lo anterior falla
+            service = Service(ChromeDriverManager().install())
+            
+        self.driver = webdriver.Chrome(service=service, options=options)
         self.wait = WebDriverWait(self.driver, 20)
-
     def esperar_desbloqueo_ui(self):
         try:
             WebDriverWait(self.driver, 5).until(EC.invisibility_of_element_located((By.CLASS_NAME, "blockOverlay")))
@@ -415,4 +436,5 @@ if btn_start:
         except Exception as e:
             st.error(f"❌ Error Crítico: {e}")
         finally:
+
             if bot: bot.cerrar()
